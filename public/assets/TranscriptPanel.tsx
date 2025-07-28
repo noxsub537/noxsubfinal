@@ -1,5 +1,5 @@
-import React from 'react';
-import { Caption } from '../types';
+﻿import React from 'react';
+import { Caption } from './types';
 
 interface TranscriptPanelProps {
   captions: Caption[];

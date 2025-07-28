@@ -1,13 +1,12 @@
 ﻿import { useState, useEffect } from 'react';
-import { Caption, VideoSource, CaptionStyle } from './types';
+import { Caption, VideoSource } from './types';
 
 export const useCaptionGenerator = (
     videoSource: VideoSource | null,
     videoDuration: number,
     language: string,
     model: string,
-    shouldGenerate: boolean,
-    captionStyle?: CaptionStyle
+    shouldGenerate: boolean
 ) => {
     const [captions, setCaptions] = useState<Caption[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -72,4 +71,4 @@ export const useCaptionGenerator = (
         cancelTranscription,
         stepId
     };
-};
+};};

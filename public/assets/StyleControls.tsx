@@ -1,5 +1,5 @@
-﻿import * as React from 'react';
-import { CaptionStyle } from '../types';
+﻿import React from 'react';
+import { CaptionStyle } from './types';
 
 interface StyleControlsProps {
     style: CaptionStyle;
