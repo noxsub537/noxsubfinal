@@ -2,10 +2,13 @@
 import { UploadIcon } from './icons';
 
 // --- Constantes para melhor manutenção ---
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL ||
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:8000'
+    : 'https://seu-backend-no-render.onrender.com');
 const YOUTUBE_METADATA_URL = `${API_BASE_URL}/api/youtube-metadata`;
-const DOWNLOAD_VIDEO_URL = `${API_BASE_URL}/api/download-video`;
-const FILES_URL = `${API_BASE_URL}/files/`;
+// Este endpoint agora deve retornar o arquivo de vídeo diretamente para download
+const DOWNLOAD_VIDEO_URL = `${API_BASE_URL}/api/download_youtube`;
 
 // --- Interfaces e Tipos ---
 interface HeroSectionProps {
@@ -14,15 +17,15 @@ interface HeroSectionProps {
 }
 
 interface YouTubeVideoMeta {
-    id: string;
+    id?: string;
     title: string;
     thumbnail: string;
-    duration: string;
+    duration: string | number;
     channelTitle: string;
 }
 
 interface YouTubeState {
-    status: string;
+    status: 'idle' | 'loadingMeta' | 'success' | 'error';
     meta: YouTubeVideoMeta | null;
     error: string | null;
 }
@@ -53,8 +56,9 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onVideoSelect, error }) => {
         meta: null,
         error: null,
     });
+    const [isImporting, setIsImporting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const debouncedVideoLink = useDebounce(videoLink, 500); // 500ms de delay
+    const debouncedVideoLink = useDebounce(videoLink, 500);
 
     // --- Funções Auxiliares ---
     const extractYouTubeId = (url: string): string | null => {
@@ -88,23 +92,29 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onVideoSelect, error }) => {
         if (file) onVideoSelect(file);
     }, [onVideoSelect]);
 
-    // --- Lógica de Importação do YouTube ---
+    // --- Lógica de Metadados do YouTube ---
     const fetchYouTubeMetadata = async (url: string) => {
         const videoId = extractYouTubeId(url);
-        if (!videoId) return;
-
+        if (!videoId) {
+            setYoutubeState({ status: 'error', meta: null, error: 'Link do YouTube inválido.' });
+            return;
+        }
         setYoutubeState({ status: 'loadingMeta', meta: null, error: null });
         try {
             const response = await fetch(YOUTUBE_METADATA_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_id: videoId }),
+                body: JSON.stringify({ url }),
             });
 
             if (!response.ok) throw new Error('Falha ao obter metadados do vídeo.');
 
-            const data: YouTubeVideoMeta = await response.json();
-            setYoutubeState({ status: 'success', meta: data, error: null });
+            const data = await response.json();
+            const meta: YouTubeVideoMeta = {
+                ...data,
+                channelTitle: data.author || data.channelTitle || '',
+            };
+            setYoutubeState({ status: 'success', meta, error: null });
         } catch (err) {
             console.error('Erro ao buscar metadados:', err);
             setYoutubeState({ status: 'error', meta: null, error: (err as Error).message });
@@ -112,10 +122,16 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onVideoSelect, error }) => {
     };
 
     useEffect(() => {
-        if (debouncedVideoLink && isValidYouTubeUrl(debouncedVideoLink)) {
-            fetchYouTubeMetadata(debouncedVideoLink);
+        if (debouncedVideoLink) {
+            const videoId = extractYouTubeId(debouncedVideoLink);
+            if (videoId && videoId.length === 11) {
+                fetchYouTubeMetadata(debouncedVideoLink);
+            } else if (debouncedVideoLink.trim() !== '') {
+                setYoutubeState({ status: 'error', meta: null, error: 'Link do YouTube inválido.' });
+            }
         }
     }, [debouncedVideoLink]);
+
 
     const handleLinkChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newLink = e.target.value;
@@ -127,73 +143,67 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onVideoSelect, error }) => {
 
     const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
         const pastedText = e.clipboardData.getData('text');
-        if (isValidYouTubeUrl(pastedText)) {
-            setVideoLink(pastedText); // Atualiza o input imediatamente
-            // A busca será acionada pelo useEffect com o valor debounceado
+        const firstValid = pastedText.trim().split(/\s+/).find(isValidYouTubeUrl);
+        if (firstValid) {
+            setVideoLink(firstValid);
+            e.preventDefault();
         }
     };
 
-    const handleImportFromUrl = async () => {
+    const handleDownloadFromUrl = async () => {
         if (youtubeState.status !== 'success' || !youtubeState.meta) return;
 
-        setYoutubeState(prevState => ({ ...prevState, status: 'importing', error: null }));
+        setIsImporting(true);
+        setYoutubeState(prevState => ({ ...prevState, error: null }));
 
         try {
-            // 1. Baixa o vídeo no backend
-            const downloadResp = await fetch(DOWNLOAD_VIDEO_URL, {
+            const response = await fetch(DOWNLOAD_VIDEO_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: videoLink }),
             });
 
-            if (!downloadResp.ok) {
-                const errorData = await downloadResp.json().catch(() => ({}));
-                throw new Error(errorData.detail || 'Falha ao baixar o vídeo do servidor.');
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => null);
+                throw new Error(errorData?.error || 'O servidor não conseguiu processar o vídeo.');
             }
 
-            const { filename } = await downloadResp.json();
-            if (!filename) throw new Error('Nome do arquivo não foi retornado pelo backend.');
-
-            // 2. Busca o arquivo baixado
-            const fileResp = await fetch(`${FILES_URL}${filename}`);
-            if (!fileResp.ok) throw new Error('Arquivo baixado não foi encontrado no servidor.');
-
-            const blob = await fileResp.blob();
+            const blob = await response.blob();
             const sanitizedTitle = youtubeState.meta.title.replace(/[<>:"/\\|?*]/g, '_');
-            const file = new File([blob], `${sanitizedTitle}.mp4`, { type: blob.type });
+            const suggestedName = `${sanitizedTitle}.mp4`;
 
-            onVideoSelect(file);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = suggestedName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
 
-            // Limpa o formulário após sucesso
             setVideoLink('');
             setYoutubeState({ status: 'idle', meta: null, error: null });
 
         } catch (err) {
             const errorMsg = (err as Error).message;
-            console.error('Erro ao importar vídeo:', err);
-
-            // Exibe erro específico para problemas de cookies de forma mais amigável
-            if (errorMsg.includes('cookies') || errorMsg.includes('login required')) {
-                setYoutubeState(prevState => ({
-                    ...prevState,
-                    status: 'error',
-                    error: 'Erro de autenticação. Tente fazer login no YouTube no seu navegador e tente novamente.'
-                }));
-            } else {
-                setYoutubeState(prevState => ({ ...prevState, status: 'error', error: `Erro ao importar: ${errorMsg}` }));
-            }
+            console.error('Erro ao baixar vídeo:', err);
+            setYoutubeState(prevState => ({
+                ...prevState,
+                status: 'error',
+                error: `Erro ao baixar: ${errorMsg}`
+            }));
+        } finally {
+            setIsImporting(false);
         }
     };
 
-    const statusStr = String(youtubeState.status);
-
     return (
         <div className="w-full max-w-5xl mx-auto px-4">
-            {/* Upload Area */}
+            {/* Upload Area (Inalterado) */}
             <div
                 className={`relative group border-2 border-dashed rounded-3xl p-12 transition-all duration-500 ease-out ${isDragging
-                        ? 'border-purple-400 bg-gradient-to-br from-purple-900/30 to-blue-900/20 scale-105 shadow-2xl shadow-purple-500/20'
-                        : 'border-slate-600/60 hover:border-purple-500/60 bg-gradient-to-br from-slate-800/40 to-slate-900/60 hover:shadow-xl hover:shadow-purple-500/10'
+                    ? 'border-purple-400 bg-gradient-to-br from-purple-900/30 to-blue-900/20 scale-105 shadow-2xl shadow-purple-500/20'
+                    : 'border-slate-600/60 hover:border-purple-500/60 bg-gradient-to-br from-slate-800/40 to-slate-900/60 hover:shadow-xl hover:shadow-purple-500/10'
                     }`}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
@@ -205,33 +215,30 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onVideoSelect, error }) => {
                     <div className={`relative w-20 h-20 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center shadow-lg transition-all duration-300 ${isDragging ? 'scale-110 shadow-purple-500/30' : 'group-hover:scale-105'}`}>
                         <UploadIcon className={`h-10 w-10 transition-colors duration-300 ${isDragging ? 'text-purple-400' : 'text-slate-400 group-hover:text-purple-400'}`} />
                     </div>
-
                     <div className="text-center space-y-2">
                         <h2 className="text-2xl font-bold text-white tracking-tight">
                             Arraste e solte seu vídeo aqui
                         </h2>
                         <p className="text-slate-400 text-lg">ou</p>
                     </div>
-
                     <button
                         onClick={() => fileInputRef.current?.click()}
                         className="group/btn relative overflow-hidden bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-semibold py-3 px-8 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25"
                     >
                         <span className="relative z-10">Selecionar Arquivo</span>
                     </button>
-
                     <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="video/*" />
                 </div>
             </div>
 
-            {/* Divider */}
+            {/* Divider (Inalterado) */}
             <div className="my-12 flex items-center justify-center">
                 <div className="flex-grow h-px bg-gradient-to-r from-transparent via-slate-600 to-transparent"></div>
                 <span className="mx-6 text-slate-400 font-medium bg-slate-800/50 px-4 py-2 rounded-full border border-slate-600/50">OU</span>
                 <div className="flex-grow h-px bg-gradient-to-r from-transparent via-slate-600 to-transparent"></div>
             </div>
 
-            {/* YouTube URL Input */}
+            {/* YouTube URL Input Area */}
             <div className="space-y-6">
                 <div className="relative group">
                     <input
@@ -241,6 +248,7 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onVideoSelect, error }) => {
                         value={videoLink}
                         onChange={handleLinkChange}
                         onPaste={handlePaste}
+                        disabled={isImporting}
                     />
                     {youtubeState.status === 'loadingMeta' && (
                         <div className="absolute right-5 top-1/2 transform -translate-y-1/2">
@@ -249,15 +257,27 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onVideoSelect, error }) => {
                     )}
                 </div>
 
-                {/* YouTube Error Message */}
+                {/* --- INÍCIO DA SEÇÃO DO MINI-TUTORIAL --- */}
+                {youtubeState.status === 'idle' && (
+                    <div className="text-center px-4">
+                        <p className="text-slate-400 text-sm">
+                            Você pode fazer o upload de um vídeo do seu computador (acima) ou colar um link do YouTube.
+                        </p>
+                        <p className="text-slate-500 text-xs mt-1">
+                            Ao usar um link, o vídeo será baixado para o seu computador. Depois, você precisará fazer o upload desse arquivo baixado.
+                        </p>
+                    </div>
+                )}
+                {/* --- FIM DA SEÇÃO DO MINI-TUTORIAL --- */}
+
+                {/* Mensagem de Erro do YouTube */}
                 {youtubeState.status === 'error' && youtubeState.error && (
                     <div className="p-3 bg-red-900/30 border border-red-600/50 rounded-xl" aria-live="polite">
                         <p className="text-red-400 text-center text-sm font-medium">{youtubeState.error}</p>
                     </div>
                 )}
 
-
-                {/* Video Preview Card */}
+                {/* Preview do Vídeo */}
                 {youtubeState.status === 'success' && youtubeState.meta && (
                     <div className="relative bg-gradient-to-br from-slate-800/60 to-slate-900/80 backdrop-blur-xl rounded-3xl p-8 border border-slate-600/30 shadow-2xl transform transition-all duration-500 animate-in slide-in-from-bottom-4">
                         <div className="relative z-10 flex flex-col md:flex-row gap-8">
@@ -273,17 +293,17 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onVideoSelect, error }) => {
                                     <p className="text-slate-400">Canal: {youtubeState.meta.channelTitle}</p>
                                 </div>
                                 <button
-                                    onClick={handleImportFromUrl}
-                                    disabled={statusStr === 'importing'}
+                                    onClick={handleDownloadFromUrl}
+                                    disabled={isImporting}
                                     className="group/import mt-4 md:mt-auto self-start relative overflow-hidden bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold py-3 px-8 rounded-xl transition-all duration-300 transform hover:scale-105 disabled:hover:scale-100 hover:shadow-lg hover:shadow-green-500/25 disabled:cursor-not-allowed"
                                 >
-                                    {statusStr === 'importing' && (
+                                    {isImporting && (
                                         <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
                                             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                                         </div>
                                     )}
-                                    <span className={`relative z-10 transition-all duration-300 ${statusStr === 'importing' ? 'ml-6' : ''}`}>
-                                        {statusStr === 'importing' ? 'Importando...' : 'Importar Vídeo'}
+                                    <span className={`relative z-10 transition-all duration-300 ${isImporting ? 'ml-6' : ''}`}>
+                                        {isImporting ? 'Baixando...' : 'Baixar Vídeo'}
                                     </span>
                                 </button>
                             </div>
@@ -292,7 +312,7 @@ const HeroSection: React.FC<HeroSectionProps> = ({ onVideoSelect, error }) => {
                 )}
             </div>
 
-            {/* Erro geral (do componente pai) */}
+            {/* Erro Geral (do componente pai) */}
             {error && (
                 <div className="mt-6 p-4 bg-red-900/30 border border-red-600/50 rounded-xl backdrop-blur-sm" aria-live="polite">
                     <p className="text-red-400 text-center font-medium">{error}</p>
