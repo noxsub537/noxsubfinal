@@ -1,4 +1,4 @@
-﻿fastapi==0.104.1
+fastapi==0.104.1
 uvicorn==0.24.0
 python-multipart==0.0.6
 torch==2.1.1
@@ -15,4 +15,4 @@ beautifulsoup4
 psutil
 pytube
 itsdangerous
-python-jose[cryptography]python-jose[cryptography]
+python-jose[cryptography]
