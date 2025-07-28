@@ -1,8 +1,8 @@
 ﻿import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { CaptionStyle, VideoSource } from './../types';
+import { Caption, CaptionStyle, VideoSource } from './types';
 import VideoPreview from './VideoPreview';
 import StyleControls from './StyleControls';
-import { useCaptionGenerator } from './../hooks/useCaptionGenerator';
+import { useCaptionGenerator } from './useCaptionGenerator.ts';
 import { DownloadIcon, ErrorIcon } from './icons';
 
 const customScrollbarStyles = `.custom-scrollbar::-webkit-scrollbar{width:6px}.custom-scrollbar::-webkit-scrollbar-track{background:rgba(51,65,85,0.3);border-radius:3px}.custom-scrollbar::-webkit-scrollbar-thumb{background:rgba(139,92,246,0.6);border-radius:3px}.custom-scrollbar::-webkit-scrollbar-thumb:hover{background:rgba(139,92,246,0.8)}`;
@@ -51,10 +51,22 @@ const EditorView: React.FC<EditorViewProps> = ({ videoSource, whisperModels }) =
     const [model, setModel] = useState('small');
     const [shouldGenerate, setShouldGenerate] = useState(false);
     const [captionStyle, setCaptionStyle] = useState<CaptionStyle>({
-        fontSize: 17, color: '#FFFFFF', fontFamily: 'Georgia, serif',
-        position: 'bottom', backgroundColor: 'rgba(0, 0, 0, 0.7)'
+        fontSize: 17,
+        color: '#FFFFFF',
+        fontFamily: 'Georgia, serif',
+        position: 'bottom',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)'
     });
-    const { captions, isLoading, error, setCaptions, loadingText, elapsed, cancelTranscription, stepId } = useCaptionGenerator(videoSource, videoDuration, language, model, shouldGenerate, captionStyle);
+
+    const { captions, isLoading, error, setCaptions, loadingText, elapsed, cancelTranscription, stepId } = useCaptionGenerator(
+        videoSource, 
+        videoDuration,
+        language,
+        model,
+        shouldGenerate,
+        captionStyle
+    );
+
     const [selectedQuality, setSelectedQuality] = useState<'low' | 'medium' | 'high'>('medium');
     const [isDownloading, setIsDownloading] = useState(false);
     const [showDownloadModal, setShowDownloadModal] = useState(false);
@@ -95,8 +107,11 @@ const EditorView: React.FC<EditorViewProps> = ({ videoSource, whisperModels }) =
         );
     };
 
-    const handleCaptionTextChange = useCallback((id: number, newText: string) => {
-        setCaptions(prev => prev.map(cap => cap.id === id ? { ...cap, text: newText } : cap));
+    // Type the callback parameters
+    const handleCaptionTextChange = useCallback((id: number, newText: string): void => {
+        setCaptions((prev: Caption[]) => prev.map((cap: Caption) => 
+            cap.id === id ? { ...cap, text: newText } : cap
+        ));
     }, [setCaptions]);
 
     const handleGenerateCaptions = () => setShouldGenerate(true);
@@ -386,12 +401,12 @@ const EditorView: React.FC<EditorViewProps> = ({ videoSource, whisperModels }) =
                                         <span className="px-2 py-1 text-xs bg-purple-600/20 text-purple-300 rounded-full font-medium">{captions.length} {captions.length === 1 ? 'caption' : 'captions'}</span>
                                     </div>
                                     <div className="flex gap-2">
-                                        <button className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all duration-200 group" title="Add new caption" onClick={() => { const newId = Math.max(...captions.map(c => c.id), 0) + 1; const lastCaption = captions[captions.length - 1]; const startTime = lastCaption ? lastCaption.end : 0; setCaptions(prev => [...prev, { id: newId, start: startTime, end: startTime + 3, text: 'Nova legenda...' }]); }} disabled={controlsDisabled}>
+                                        <button className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all duration-200 group" title="Add new caption" onClick={() => { const newId = Math.max(...captions.map((c: Caption) => c.id), 0) + 1; const lastCaption = captions[captions.length - 1]; const startTime = lastCaption ? lastCaption.end : 0; setCaptions((prev: Caption[]) => [...prev, { id: newId, start: startTime, end: startTime + 3, text: 'Nova legenda...' }]); }} disabled={controlsDisabled}>
                                             <svg className="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                             </svg>
                                         </button>
-                                        <button className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all duration-200 group" title="Export transcript" onClick={() => { const transcript = captions.map((cap, i) => `${i + 1}\n${formatTime(cap.start)} --> ${formatTime(cap.end)}\n${cap.text}\n`).join('\n'); const blob = new Blob([transcript], { type: 'text/plain' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'transcript.srt'; a.click(); URL.revokeObjectURL(url); }} disabled={controlsDisabled}>
+                                        <button className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all duration-200 group" title="Export transcript" onClick={() => { const transcript = captions.map((cap: Caption, i: number) => `${i + 1}\n${formatTime(cap.start)} --> ${formatTime(cap.end)}\n${cap.text}\n`).join('\n'); const blob = new Blob([transcript], { type: 'text/plain' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'transcript.srt'; a.click(); URL.revokeObjectURL(url); }} disabled={controlsDisabled}>
                                             <svg className="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                             </svg>
@@ -412,7 +427,7 @@ const EditorView: React.FC<EditorViewProps> = ({ videoSource, whisperModels }) =
                                             </div>
                                         ) : (
                                             <div className="space-y-2 p-2">
-                                                {captions.map((caption, index) => (
+                                                {captions.map((caption: Caption, index: number) => (
                                                     <div key={caption.id} className="group relative bg-slate-800/60 hover:bg-slate-800/80 rounded-lg p-3 border border-slate-700/50 hover:border-slate-600/50 transition-all duration-200 hover:shadow-lg">
                                                         <div className="flex items-center justify-between mb-2">
                                                             <div className="flex items-center gap-2">
@@ -425,7 +440,7 @@ const EditorView: React.FC<EditorViewProps> = ({ videoSource, whisperModels }) =
                                                                     <span className="font-mono bg-slate-700/50 px-2 py-1 rounded">{formatTime(caption.end)}</span>
                                                                 </div>
                                                             </div>
-                                                            <button className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-all duration-200" title="Delete caption" onClick={() => { setCaptions(prev => prev.filter(c => c.id !== caption.id)); }} disabled={controlsDisabled}>
+                                                            <button className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-all duration-200" title="Delete caption" onClick={() => { setCaptions((prev: Caption[]) => prev.filter((c: Caption) => c.id !== caption.id)); }} disabled={controlsDisabled}>
                                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                                                 </svg>
