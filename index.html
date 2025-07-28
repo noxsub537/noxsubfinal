@@ -1,0 +1,35 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NoxSub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://rsms.me/inter/inter.css');
+
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+    <link rel="stylesheet" href="/index.css" />
+    <!-- Favicon animado -->
+    <link rel="icon" type="image/svg+xml" href="/favicon/00000.svg" />
+    <script>
+    // Favicon animation: todos os frames presentes em public/favicon/
+    const frames = [
+      '/favicon/00000.svg'
+    ];
+    let current = 0;
+    setInterval(() => {
+      const link = document.querySelector("link[rel~='icon']");
+      if (link) link.href = frames[current];
+      current = (current + 1) % frames.length;
+    }, 150); // 150ms por frame
+    </script>
+</head>
+<body class="bg-[#0F101A] text-white">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+</body>
+</html>

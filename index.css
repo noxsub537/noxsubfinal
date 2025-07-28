@@ -1,0 +1,7 @@
+﻿/* index.css - arquivo base para evitar erro 404 */
+body {
+  margin: 0;
+  font-family: Inter, Arial, sans-serif;
+  background: #18181b;
+  color: #fff;
+}

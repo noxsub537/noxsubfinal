@@ -1,0 +1,5 @@
+{
+  "name": "Visionary Captions AI",
+  "description": "An AI-powered web application to automatically generate, customize, and render captions onto videos. Users can upload a video, edit the generated subtitles in real-time, and export the final product.",
+  "requestFramePermissions": []
+}
